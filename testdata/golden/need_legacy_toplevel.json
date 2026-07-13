@@ -1,0 +1,5 @@
+{
+  "type": "http",
+  "correlation_id": "corr-legacy",
+  "payload": {"url": "https://example.com"}
+}

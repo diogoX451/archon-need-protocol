@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "net_id": "net-abc",
+  "workflow_id": "wf-123",
+  "need": {
+    "type": "http",
+    "correlation_id": "corr-001",
+    "payload": {
+      "method": "GET",
+      "url": "https://example.com/health"
+    },
+    "created_at": "2026-01-01T00:00:00Z"
+  }
+}

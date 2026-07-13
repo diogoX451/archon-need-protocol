@@ -40,3 +40,26 @@ orchestrator resumes paused agent by correlation_id
 ## Out of scope
 
 Tenant billing, channel delivery, and product UI are **not** part of this protocol.
+
+## Compliance suite
+
+This repository includes golden JSON under `testdata/golden/` and tests in
+`compliance_test.go`. Language ports should pass the same fixtures:
+
+| Fixture | Expectation |
+|---------|-------------|
+| `need_v1.json` | Parse schema_version=1, correlation_id, nested payload |
+| `need_legacy_toplevel.json` | Dual-read legacy top-level need fields |
+| `webhook_body.json` | `{ "payload": ... }` shape for orchestrator resume |
+
+### Executor checklist (community implementations)
+
+- [ ] Refuse empty `correlation_id`
+- [ ] Classify permanent vs transient errors
+- [ ] Idempotent side effects under redelivery
+- [ ] POST webhook before ack on success
+- [ ] Do not ack on transient webhook/network failure
+
+## Example
+
+See [`examples/echo-executor`](examples/echo-executor) for a full NATS → parse → webhook loop.
