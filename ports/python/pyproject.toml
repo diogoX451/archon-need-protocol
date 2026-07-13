@@ -1,0 +1,16 @@
+[project]
+name = "archon-need-protocol"
+version = "0.2.0"
+description = "Archon need/response wire contracts — Python port of golden fixtures"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Diogo Almeida", email = "69609025+diogoX451@users.noreply.github.com" }]
+
+[project.urls]
+Homepage = "https://github.com/diogoX451/archon-need-protocol"
+Repository = "https://github.com/diogoX451/archon-need-protocol"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["needprotocol*"]
