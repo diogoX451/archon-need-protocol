@@ -2,10 +2,10 @@
 //
 // Usage:
 //
-//	go run . -nats nats://127.0.0.1:4222 -subject need.echo -api http://127.0.0.1:8080
+//	go run . -bus-url nats://127.0.0.1:4222 -subject need.echo -api http://127.0.0.1:8080
 //
-// This is intentionally small so newcomers see the whole loop:
-// subscribe → parse need → work → webhook → ack.
+// The bus driver is pluggable (default nats). Domain code never imports a
+// broker SDK — only archon-bus.
 package main
 
 import (
@@ -16,40 +16,54 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
-	needprotocol "github.com/diogoX451/archon-need-protocol"
+	archonbus "github.com/diogoX451/archon-bus"
 	executorruntime "github.com/diogoX451/archon-executor-runtime"
-	natsbus "github.com/diogoX451/archon-nats-bus"
+	_ "github.com/diogoX451/archon-nats-bus"
+	needprotocol "github.com/diogoX451/archon-need-protocol"
 )
 
 func main() {
-	natsURL := flag.String("nats", env("NATS_URL", "nats://127.0.0.1:4222"), "NATS URL")
+	busDriver := flag.String("bus-driver", env("ARCHON_BUS_DRIVER", "nats"), "bus driver")
+	busURL := flag.String("bus-url", firstEnv("nats://127.0.0.1:4222", "ARCHON_BUS_URL", "NATS_URL"), "bus URL")
+	legacyNATS := flag.String("nats", "", "deprecated: use -bus-url")
 	subject := flag.String("subject", env("NEED_SUBJECT", "need.echo"), "need subject")
 	api := flag.String("api", env("ORCHESTRATOR_URL", "http://127.0.0.1:8080"), "orchestrator base URL")
 	flag.Parse()
 
-	bus, err := natsbus.New(natsbus.Config{URL: *natsURL, MaxReconnects: -1, ReconnectWait: 2 * time.Second})
+	url := strings.TrimSpace(*busURL)
+	if v := strings.TrimSpace(*legacyNATS); v != "" {
+		log.Printf("warning: -nats is deprecated; use -bus-url")
+		url = v
+	}
+
+	b, err := archonbus.Open(archonbus.Config{
+		Driver:        *busDriver,
+		URL:           url,
+		MaxReconnects: -1,
+		ReconnectWait: 2 * time.Second,
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer bus.Close()
+	defer b.Close()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	_, err = bus.Subscribe(*subject, func(ctx context.Context, msg natsbus.Message) error {
+	_, err = b.Subscribe(*subject, func(ctx context.Context, msg archonbus.Message) error {
 		ev, err := needprotocol.ParseNeedEvent(msg.Data())
 		if err != nil {
 			log.Printf("bad payload: %v", err)
-			return msg.Ack() // permanent poison
+			return msg.Ack()
 		}
 		if ev.Need.CorrelationID == "" {
 			log.Printf("missing correlation_id")
 			return msg.Ack()
 		}
-		// Work: echo the need payload with a timestamp.
 		out, _ := json.Marshal(map[string]any{
 			"echo":      json.RawMessage(ev.Need.Payload),
 			"type":      ev.Need.Type,
@@ -60,14 +74,14 @@ func main() {
 			DeliveryToken: os.Getenv("DELIVERY_TOKEN"),
 		}, ev.Need.CorrelationID, out); err != nil {
 			log.Printf("webhook: %v", err)
-			return err // transient → redeliver
+			return err
 		}
 		return msg.Ack()
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("echo-executor listening subject=%s api=%s", *subject, *api)
+	log.Printf("echo-executor driver=%s subject=%s api=%s", *busDriver, *subject, *api)
 	<-ctx.Done()
 	fmt.Println("shutdown")
 }
@@ -77,4 +91,13 @@ func env(k, d string) string {
 		return v
 	}
 	return d
+}
+
+func firstEnv(fallback string, keys ...string) string {
+	for _, k := range keys {
+		if v := os.Getenv(k); v != "" {
+			return v
+		}
+	}
+	return fallback
 }
